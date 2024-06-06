@@ -28,6 +28,7 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.assertj.core.api.AssertProvider;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Nested;
@@ -42,7 +43,6 @@ import org.skyscreamer.jsonassert.JSONCompareMode;
 import org.skyscreamer.jsonassert.JSONCompareResult;
 import org.skyscreamer.jsonassert.comparator.JSONComparator;
 
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
@@ -90,6 +90,14 @@ class AbstractJsonContentAssertTests {
 	@Test
 	void isNullWhenActualIsNullShouldPass() {
 		assertThat(forJson(null)).isNull();
+	}
+
+	@Test
+	void satisfiesAllowFurtherAssertions() {
+		assertThat(forJson(SIMPSONS)).satisfies(content -> {
+			assertThat(content).extractingPath("$.familyMembers[0].name").isEqualTo("Homer");
+			assertThat(content).extractingPath("$.familyMembers[1].name").isEqualTo("Marge");
+		});
 	}
 
 	@Nested
@@ -278,8 +286,8 @@ class AbstractJsonContentAssertTests {
 		void convertArrayToParameterizedType() {
 			assertThat(forJson(SIMPSONS, jsonHttpMessageConverter))
 					.extractingPath("$.familyMembers")
-					.convertTo(new ParameterizedTypeReference<List<Member>>() {})
-					.satisfies(family -> assertThat(family).hasSize(5).element(0).isEqualTo(new Member("Homer")));
+					.convertTo(InstanceOfAssertFactories.list(Member.class))
+					.hasSize(5).element(0).isEqualTo(new Member("Homer"));
 		}
 
 		@Test
@@ -831,7 +839,7 @@ class AbstractJsonContentAssertTests {
 	private static class TestJsonContentAssert extends AbstractJsonContentAssert<TestJsonContentAssert> {
 
 		public TestJsonContentAssert(@Nullable String json, @Nullable GenericHttpMessageConverter<Object> jsonMessageConverter) {
-			super(json, jsonMessageConverter, TestJsonContentAssert.class);
+			super((json != null ? new JsonContent(json, jsonMessageConverter) : null), TestJsonContentAssert.class);
 		}
 	}
 

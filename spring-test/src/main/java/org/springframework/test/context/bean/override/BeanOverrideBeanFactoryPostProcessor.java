@@ -128,17 +128,20 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 
 		RootBeanDefinition beanDefinition = createBeanDefinition(overrideMetadata);
 		String beanName = overrideMetadata.getBeanName();
+		String beanNameIncludingFactory;
 		BeanDefinition existingBeanDefinition = null;
 		if (beanName == null) {
-			Set<String> candidates = getExistingBeanNamesByType(beanFactory, overrideMetadata, true);
-			if (candidates.size() != 1) {
-				Field f = overrideMetadata.getField();
-				throw new IllegalStateException("Unable to select a bean definition to override, " +
-						candidates.size() + " bean definitions found of type " + overrideMetadata.getBeanType() +
-						" (as required by annotated field '" + f.getDeclaringClass().getSimpleName() +
-						"." + f.getName() + "')");
+			Set<String> candidateNames = getExistingBeanNamesByType(beanFactory, overrideMetadata, true);
+			int candidateCount = candidateNames.size();
+			if (candidateCount != 1) {
+				Field field = overrideMetadata.getField();
+				throw new IllegalStateException("Unable to select a bean definition to override: found " +
+						candidateCount + " bean definitions of type " + overrideMetadata.getBeanType() +
+						" (as required by annotated field '" + field.getDeclaringClass().getSimpleName() +
+						"." + field.getName() + "')" + (candidateCount > 0 ? ": " + candidateNames : ""));
 			}
-			beanName = candidates.iterator().next();
+			beanNameIncludingFactory = candidateNames.iterator().next();
+			beanName = BeanFactoryUtils.transformedBeanName(beanNameIncludingFactory);
 			existingBeanDefinition = beanFactory.getBeanDefinition(beanName);
 		}
 		else {
@@ -147,9 +150,10 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 				existingBeanDefinition = beanFactory.getBeanDefinition(beanName);
 			}
 			else if (enforceExistingDefinition) {
-				throw new IllegalStateException("Unable to override bean '" + beanName + "'; there is no" +
-						" bean definition to replace with that name of type " + overrideMetadata.getBeanType());
+				throw new IllegalStateException("Unable to override bean '" + beanName + "': there is no " +
+						"bean definition to replace with that name of type " + overrideMetadata.getBeanType());
 			}
+			beanNameIncludingFactory = beanName;
 		}
 
 		if (existingBeanDefinition != null) {
@@ -159,7 +163,7 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 		registry.registerBeanDefinition(beanName, beanDefinition);
 
 		Object override = overrideMetadata.createOverride(beanName, existingBeanDefinition, null);
-		if (beanFactory.isSingleton(beanName)) {
+		if (beanFactory.isSingleton(beanNameIncludingFactory)) {
 			// Now we have an instance (the override) that we can register.
 			// At this stage we don't expect a singleton instance to be present,
 			// and this call will throw if there is such an instance already.
@@ -167,7 +171,7 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 		}
 
 		overrideMetadata.track(override, beanFactory);
-		this.overrideRegistrar.registerNameForMetadata(overrideMetadata, beanName);
+		this.overrideRegistrar.registerNameForMetadata(overrideMetadata, beanNameIncludingFactory);
 	}
 
 	/**
@@ -181,20 +185,21 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 		String beanName = metadata.getBeanName();
 		if (beanName == null) {
 			Set<String> candidateNames = getExistingBeanNamesByType(beanFactory, metadata, true);
-			if (candidateNames.size() != 1) {
-				Field f = metadata.getField();
-				throw new IllegalStateException("Unable to select a bean to override by wrapping, " +
-						candidateNames.size() + " bean instances found of type " + metadata.getBeanType() +
-						" (as required by annotated field '" + f.getDeclaringClass().getSimpleName() +
-						"." + f.getName() + "')");
+			int candidateCount = candidateNames.size();
+			if (candidateCount != 1) {
+				Field field = metadata.getField();
+				throw new IllegalStateException("Unable to select a bean to override by wrapping: found " +
+						candidateCount + " bean instances of type " + metadata.getBeanType() +
+						" (as required by annotated field '" + field.getDeclaringClass().getSimpleName() +
+						"." + field.getName() + "')" + (candidateCount > 0 ? ": " + candidateNames : ""));
 			}
-			beanName = candidateNames.iterator().next();
+			beanName = BeanFactoryUtils.transformedBeanName(candidateNames.iterator().next());
 		}
 		else {
 			Set<String> candidates = getExistingBeanNamesByType(beanFactory, metadata, false);
 			if (!candidates.contains(beanName)) {
-				throw new IllegalStateException("Unable to override bean '" + beanName + "' by wrapping; there is no" +
-						" existing bean instance with that name of type " + metadata.getBeanType());
+				throw new IllegalStateException("Unable to override bean '" + beanName + "' by wrapping: there is no " +
+						"existing bean instance with that name of type " + metadata.getBeanType());
 			}
 		}
 		this.overrideRegistrar.markWrapEarly(metadata, beanName);
