@@ -16,7 +16,10 @@
 
 package org.springframework.web.reactive.result.view;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -37,9 +40,11 @@ import org.springframework.core.ReactiveAdapterRegistry;
 import org.springframework.core.ResolvableType;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.http.server.reactive.ServerHttpResponseDecorator;
 import org.springframework.lang.Nullable;
@@ -94,6 +99,8 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 	private final List<ViewResolver> viewResolvers = new ArrayList<>(4);
 
 	private final List<View> defaultViews = new ArrayList<>(4);
+
+	private final List<FragmentFormatter> fragmentFormatters = List.of(new SseFragmentFormatter());
 
 
 	/**
@@ -154,22 +161,40 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 			return true;
 		}
 
-		Class<?> type = result.getReturnType().toClass();
+		ResolvableType returnType = result.getReturnType();
+		Class<?> type = returnType.toClass();
+
 		ReactiveAdapter adapter = getAdapter(result);
 		if (adapter != null) {
 			if (adapter.isNoValue()) {
 				return true;
 			}
-			type = result.getReturnType().getGeneric().toClass();
+
+			type = returnType.getGeneric().toClass();
+			returnType = returnType.getNested(2);
+
+			if (adapter.isMultiValue()) {
+				return Fragment.class.isAssignableFrom(type);
+			}
 		}
 
 		return (CharSequence.class.isAssignableFrom(type) ||
 				Rendering.class.isAssignableFrom(type) ||
-				FragmentRendering.class.isAssignableFrom(type) ||
+				FragmentsRendering.class.isAssignableFrom(type) ||
 				Model.class.isAssignableFrom(type) ||
 				Map.class.isAssignableFrom(type) ||
 				View.class.isAssignableFrom(type) ||
+				isFragmentCollection(returnType.getNested(2)) ||
 				!BeanUtils.isSimpleProperty(type));
+	}
+
+	private boolean hasModelAnnotation(MethodParameter parameter) {
+		return parameter.hasMethodAnnotation(ModelAttribute.class);
+	}
+
+	private static boolean isFragmentCollection(ResolvableType returnType) {
+		Class<?> clazz = returnType.resolve(Object.class);
+		return (Collection.class.isAssignableFrom(clazz) && Fragment.class.equals(returnType.getNested(2).resolve()));
 	}
 
 	@Override
@@ -181,14 +206,19 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 
 		if (adapter != null) {
 			if (adapter.isMultiValue()) {
-				throw new IllegalArgumentException("Multi-value producer: " + result.getReturnType());
+				valueMono = (result.getReturnValue() != null ?
+						Mono.just(FragmentsRendering.withPublisher(adapter.toPublisher(result.getReturnValue())).build()) :
+						Mono.empty());
+
+				valueType = ResolvableType.forClass(FragmentsRendering.class);
 			}
+			else {
+				valueMono = (result.getReturnValue() != null ?
+						Mono.from(adapter.toPublisher(result.getReturnValue())) : Mono.empty());
 
-			valueMono = (result.getReturnValue() != null ?
-					Mono.from(adapter.toPublisher(result.getReturnValue())) : Mono.empty());
-
-			valueType = (adapter.isNoValue() ? ResolvableType.forClass(Void.class) :
-					result.getReturnType().getGeneric());
+				valueType = (adapter.isNoValue() ? ResolvableType.forClass(Void.class) :
+						result.getReturnType().getGeneric());
+			}
 		}
 		else {
 			valueMono = Mono.justOrEmpty(result.getReturnValue());
@@ -208,6 +238,11 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 					Class<?> clazz = valueType.toClass();
 					if (clazz == Object.class) {
 						clazz = returnValue.getClass();
+					}
+
+					if (Collection.class.isAssignableFrom(clazz)) {
+						returnValue = FragmentsRendering.withCollection((Collection<Fragment>) returnValue).build();
+						clazz = FragmentsRendering.class;
 					}
 
 					if (returnValue == NO_VALUE || ClassUtils.isVoidType(clazz)) {
@@ -231,8 +266,8 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 						viewsMono = (view instanceof String viewName ? resolveViews(viewName, locale) :
 								Mono.just(Collections.singletonList((View) view)));
 					}
-					else if (FragmentRendering.class.isAssignableFrom(clazz)) {
-						FragmentRendering render = (FragmentRendering) returnValue;
+					else if (FragmentsRendering.class.isAssignableFrom(clazz)) {
+						FragmentsRendering render = (FragmentsRendering) returnValue;
 						HttpStatusCode status = render.status();
 						if (status != null) {
 							exchange.getResponse().setStatusCode(status);
@@ -264,10 +299,6 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 					bindingContext.updateModel(exchange);
 					return viewsMono.flatMap(views -> render(views, model.asMap(), bindingContext, exchange));
 				});
-	}
-
-	private boolean hasModelAnnotation(MethodParameter parameter) {
-		return parameter.hasMethodAnnotation(ModelAttribute.class);
 	}
 
 	/**
@@ -303,7 +334,7 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 			Fragment fragment, Locale locale, BindingContext bindingContext, ServerWebExchange exchange) {
 
 		// Merge attributes from top-level model
-		bindingContext.getModel().asMap().forEach((key, value) -> fragment.model().putIfAbsent(key, value));
+		fragment.mergeAttributes(bindingContext.getModel());
 
 		BodySavingResponse response = new BodySavingResponse(exchange.getResponse());
 		ServerWebExchange mutatedExchange = exchange.mutate().response(response).build();
@@ -312,8 +343,22 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 				Mono.just(List.of(fragment.view())) :
 				resolveViews(fragment.viewName() != null ? fragment.viewName() : getDefaultViewName(exchange), locale));
 
+		FragmentFormatter fragmentFormatter = getFragmentFormatter(exchange);
+
 		return selectedViews.flatMap(views -> render(views, fragment.model(), bindingContext, mutatedExchange))
-				.then(Mono.fromSupplier(response::getBodyFlux));
+				.then(Mono.fromSupplier(() -> (fragmentFormatter != null ?
+						fragmentFormatter.format(response.getBodyFlux(), fragment, exchange) :
+						response.getBodyFlux())));
+	}
+
+	@Nullable
+	private FragmentFormatter getFragmentFormatter(ServerWebExchange exchange) {
+		for (FragmentFormatter formatter : this.fragmentFormatters) {
+			if (formatter.supports(exchange.getRequest())) {
+				return formatter;
+			}
+		}
+		return null;
 	}
 
 	private String getNameForReturnValue(MethodParameter returnType) {
@@ -408,6 +453,73 @@ public class ViewResolutionResultHandler extends HandlerResultHandlerSupport imp
 		public Mono<Void> writeAndFlushWith(Publisher<? extends Publisher<? extends DataBuffer>> body) {
 			this.bodyFlux = Flux.from(body).flatMap(Flux::from);
 			return Mono.empty();
+		}
+	}
+
+
+	/**
+	 * Strategy to render fragment with stream formatting.
+	 */
+	private interface FragmentFormatter {
+
+		/**
+		 * Whether the formatter supports the given request.
+		 */
+		boolean supports(ServerHttpRequest request);
+
+		/**
+		 * Format the given fragment.
+		 * @param fragmentBuffers the fragment serialized to data buffers
+		 * @param fragment the fragment being rendered
+		 * @param exchange the current exchange
+		 * @return the formatted fragment
+		 */
+		Flux<DataBuffer> format(Flux<DataBuffer> fragmentBuffers, Fragment fragment, ServerWebExchange exchange);
+
+	}
+
+
+	/**
+	 * Formatter for Server-Sent Events formatting.
+	 */
+	private static class SseFragmentFormatter implements FragmentFormatter {
+
+		@Override
+		public boolean supports(ServerHttpRequest request) {
+			String header = request.getHeaders().getFirst(HttpHeaders.ACCEPT);
+			return (header != null && header.contains(MediaType.TEXT_EVENT_STREAM_VALUE));
+		}
+
+		@Override
+		public Flux<DataBuffer> format(
+				Flux<DataBuffer> fragmentBuffers, Fragment fragment, ServerWebExchange exchange) {
+
+			Charset charset = getCharset(exchange.getRequest());
+			DataBufferFactory bufferFactory = exchange.getResponse().bufferFactory();
+
+			String eventLine = fragment.viewName() != null ? "event:" + fragment.viewName() + "\n" : "";
+
+			return Flux.concat(
+					Flux.just(encodeText(eventLine + "data:", charset, bufferFactory)),
+					fragmentBuffers,
+					Flux.just(encodeText("\n\n", charset, bufferFactory)));
+		}
+
+		private Charset getCharset(ServerHttpRequest request) {
+			for (MediaType mediaType : request.getHeaders().getAccept()) {
+				if (mediaType.isCompatibleWith(MediaType.TEXT_EVENT_STREAM)) {
+					if (mediaType.getCharset() != null) {
+						return mediaType.getCharset();
+					}
+					break;
+				}
+			}
+			return StandardCharsets.UTF_8;
+		}
+
+		private DataBuffer encodeText(String text, Charset charset, DataBufferFactory bufferFactory) {
+			byte[] bytes = text.getBytes(charset);
+			return bufferFactory.wrap(bytes);
 		}
 	}
 
