@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-package org.springframework.jmx;
+package org.springframework.docs.integration.schedulingtaskexecutorusage
 
-/**
- * @author Rob Harrop
- * @author Juergen Hoeller
- */
-public interface IJmxTestBean extends ITestBean {
+import org.apache.commons.logging.Log
+import org.apache.commons.logging.LogFactory
+import org.springframework.core.task.TaskDecorator
 
-	int add(int x, int y);
+class LoggingTaskDecorator : TaskDecorator {
 
-	long myOperation();
+	override fun decorate(runnable: Runnable): Runnable {
+		return Runnable {
+			logger.debug("Before execution of $runnable")
+			runnable.run()
+			logger.debug("After execution of $runnable")
+		}
+	}
 
-	void setAge(int age);
-
-	int getAge();
-
-	// used to test invalid methods that exist in the proxy interface
-	void dontExposeMe();
-
+	companion object {
+		private val logger: Log = LogFactory.getLog(
+			LoggingTaskDecorator::class.java
+		)
+	}
 }
