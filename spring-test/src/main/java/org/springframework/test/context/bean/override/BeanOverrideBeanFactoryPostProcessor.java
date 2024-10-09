@@ -19,9 +19,7 @@ package org.springframework.test.context.bean.override;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.BeansException;
@@ -32,16 +30,16 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.DependencyDescriptor;
-import org.springframework.beans.factory.config.SmartInstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanNameGenerator;
 import org.springframework.beans.factory.support.DefaultBeanNameGenerator;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.aot.AbstractAotProcessor;
 import org.springframework.core.Ordered;
-import org.springframework.core.PriorityOrdered;
 import org.springframework.core.ResolvableType;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 
 /**
  * A {@link BeanFactoryPostProcessor} implementation that processes identified
@@ -79,9 +77,7 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 	 * @param overrideRegistrar the {@code BeanOverrideRegistrar} used to track
 	 * metadata
 	 */
-	public BeanOverrideBeanFactoryPostProcessor(Set<OverrideMetadata> metadata,
-			BeanOverrideRegistrar overrideRegistrar) {
-
+	BeanOverrideBeanFactoryPostProcessor(Set<OverrideMetadata> metadata, BeanOverrideRegistrar overrideRegistrar) {
 		this.metadata = metadata;
 		this.overrideRegistrar = overrideRegistrar;
 	}
@@ -94,40 +90,51 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 
 	@Override
 	public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
-		if (!(beanFactory instanceof BeanDefinitionRegistry registry)) {
-			throw new IllegalStateException("Cannot process bean override with a BeanFactory " +
-					"that doesn't implement BeanDefinitionRegistry: " + beanFactory.getClass());
-		}
-
 		for (OverrideMetadata metadata : this.metadata) {
-			registerBeanOverride(beanFactory, registry, metadata);
+			registerBeanOverride(beanFactory, metadata);
 		}
 	}
 
-	private void registerBeanOverride(ConfigurableListableBeanFactory beanFactory, BeanDefinitionRegistry registry,
-			OverrideMetadata overrideMetadata) {
-
+	private void registerBeanOverride(ConfigurableListableBeanFactory beanFactory, OverrideMetadata overrideMetadata) {
 		switch (overrideMetadata.getStrategy()) {
-			case REPLACE_DEFINITION -> replaceDefinition(beanFactory, registry, overrideMetadata, true);
-			case REPLACE_OR_CREATE_DEFINITION -> replaceDefinition(beanFactory, registry, overrideMetadata, false);
+			case REPLACE_DEFINITION -> replaceDefinition(beanFactory, overrideMetadata, true);
+			case REPLACE_OR_CREATE_DEFINITION -> replaceDefinition(beanFactory, overrideMetadata, false);
 			case WRAP_BEAN -> wrapBean(beanFactory, overrideMetadata);
 		}
 	}
 
-	private void replaceDefinition(ConfigurableListableBeanFactory beanFactory, BeanDefinitionRegistry registry,
-			OverrideMetadata overrideMetadata, boolean enforceExistingDefinition) {
+	private void replaceDefinition(ConfigurableListableBeanFactory beanFactory, OverrideMetadata overrideMetadata,
+			boolean enforceExistingDefinition) {
+
+		// NOTE: This method supports 3 distinct scenarios which must be accounted for.
+		//
+		// 1) JVM runtime
+		// 2) AOT processing
+		// 3) AOT runtime
+
+		if (!(beanFactory instanceof BeanDefinitionRegistry registry)) {
+			throw new IllegalStateException("Cannot process bean override with a BeanFactory " +
+					"that doesn't implement BeanDefinitionRegistry: " + beanFactory.getClass().getName());
+		}
 
 		// The following is a "pseudo" bean definition which MUST NOT be used to
-		// create an actual bean instance.
+		// create an actual bean instance. In fact, it is only used as a placeholder
+		// to support overrides for nonexistent beans.
 		RootBeanDefinition pseudoBeanDefinition = createPseudoBeanDefinition(overrideMetadata);
+
 		String beanName = overrideMetadata.getBeanName();
 		String beanNameIncludingFactory;
 		BeanDefinition existingBeanDefinition = null;
 		if (beanName == null) {
-			beanNameIncludingFactory = getBeanNameForType(
-					beanFactory, registry, overrideMetadata, pseudoBeanDefinition, enforceExistingDefinition);
-			beanName = BeanFactoryUtils.transformedBeanName(beanNameIncludingFactory);
-			if (registry.containsBeanDefinition(beanName)) {
+			beanNameIncludingFactory = getBeanNameForType(beanFactory, overrideMetadata, enforceExistingDefinition);
+			if (beanNameIncludingFactory == null) {
+				// We need to generate a name for a nonexistent bean.
+				beanName = beanNameGenerator.generateBeanName(pseudoBeanDefinition, registry);
+				beanNameIncludingFactory = beanName;
+			}
+			else {
+				// We are overriding an existing bean.
+				beanName = BeanFactoryUtils.transformedBeanName(beanNameIncludingFactory);
 				existingBeanDefinition = beanFactory.getBeanDefinition(beanName);
 			}
 		}
@@ -145,18 +152,26 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 			beanNameIncludingFactory = beanName;
 		}
 
-		// Process existing bean definition.
 		if (existingBeanDefinition != null) {
+			// Validate the existing bean definition.
+			//
+			// Applies during "JVM runtime", "AOT processing", and "AOT runtime".
 			validateBeanDefinition(beanFactory, beanName);
-			// Since validation may have registered a singleton as a side effect -- for example,
-			// for a FactoryBean -- we need to remove the bean definition (which removes the
-			// singleton as a side effect) and re-register the bean definition.
-			registry.removeBeanDefinition(beanName);
-			registry.registerBeanDefinition(beanName, existingBeanDefinition);
+		}
+		else if (Boolean.getBoolean(AbstractAotProcessor.AOT_PROCESSING)) {
+			// There was no existing bean definition, but during "AOT processing" we
+			// do not register the "pseudo" bean definition since our AOT support
+			// cannot automatically convert that to a functional bean definition for
+			// use at "AOT runtime". Furthermore, by not registering a bean definition
+			// for a nonexistent bean, we allow the "JVM runtime" and "AOT runtime"
+			// to operate the same in the following else-block.
 		}
 		else {
-			// There was no existing bean definition, so we register the pseudo bean definition
-			// to ensure that a bean definition exists for the given bean name.
+			// There was no existing bean definition, so we register the "pseudo" bean
+			// definition to ensure that a suitable bean definition exists for the given
+			// bean name for proper autowiring candidate resolution.
+			//
+			// Applies during "JVM runtime" and "AOT runtime".
 			registry.registerBeanDefinition(beanName, pseudoBeanDefinition);
 		}
 
@@ -167,6 +182,11 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 		// Now we have an instance (the override) that we can register. At this stage, we don't
 		// expect a singleton instance to be present. If for some reason a singleton instance
 		// already exists, the following will throw an exception.
+		//
+		// As a bonus, by manually registering a singleton during "AOT processing", we allow
+		// GenericApplicationContext's preDetermineBeanType() method to transparently register
+		// runtime hints for a proxy generated by the above createOverride() invocation --
+		// for example, when @MockitoBean creates a mock based on a JDK dynamic proxy.
 		beanFactory.registerSingleton(beanName, override);
 	}
 
@@ -184,10 +204,12 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 			int candidateCount = candidateNames.size();
 			if (candidateCount != 1) {
 				Field field = overrideMetadata.getField();
-				throw new IllegalStateException("Unable to select a bean to override by wrapping: found " +
-						candidateCount + " bean instances of type " + overrideMetadata.getBeanType() +
-						" (as required by annotated field '" + field.getDeclaringClass().getSimpleName() +
-						"." + field.getName() + "')" + (candidateCount > 0 ? ": " + candidateNames : ""));
+				throw new IllegalStateException("""
+						Unable to select a bean to override by wrapping: found %d bean instances of type %s \
+						(as required by annotated field '%s.%s')%s"""
+						.formatted(candidateCount, overrideMetadata.getBeanType(),
+							field.getDeclaringClass().getSimpleName(), field.getName(),
+							(candidateCount > 0 ? ": " + candidateNames : "")));
 			}
 			beanName = BeanFactoryUtils.transformedBeanName(candidateNames.iterator().next());
 		}
@@ -205,8 +227,9 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 		this.overrideRegistrar.registerNameForMetadata(overrideMetadata, beanName);
 	}
 
-	private String getBeanNameForType(ConfigurableListableBeanFactory beanFactory, BeanDefinitionRegistry registry,
-			OverrideMetadata overrideMetadata, RootBeanDefinition beanDefinition, boolean enforceExistingDefinition) {
+	@Nullable
+	private String getBeanNameForType(ConfigurableListableBeanFactory beanFactory, OverrideMetadata overrideMetadata,
+			boolean enforceExistingDefinition) {
 
 		Set<String> candidateNames = getExistingBeanNamesByType(beanFactory, overrideMetadata, true);
 		int candidateCount = candidateNames.size();
@@ -220,7 +243,7 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 						"Unable to override bean: no bean definitions of type %s (as required by annotated field '%s.%s')"
 							.formatted(overrideMetadata.getBeanType(), field.getDeclaringClass().getSimpleName(), field.getName()));
 			}
-			return beanNameGenerator.generateBeanName(beanDefinition, registry);
+			return null;
 		}
 
 		Field field = overrideMetadata.getField();
@@ -295,49 +318,13 @@ class BeanOverrideBeanFactoryPostProcessor implements BeanFactoryPostProcessor, 
 	private static void validateBeanDefinition(ConfigurableListableBeanFactory beanFactory, String beanName) {
 		Assert.state(beanFactory.isSingleton(beanName),
 				() -> "Unable to override bean '" + beanName + "': only singleton beans can be overridden.");
-	}
 
-
-	static class WrapEarlyBeanPostProcessor implements SmartInstantiationAwareBeanPostProcessor,
-			PriorityOrdered {
-
-		private final Map<String, Object> earlyReferences = new ConcurrentHashMap<>(16);
-
-		private final BeanOverrideRegistrar overrideRegistrar;
-
-		WrapEarlyBeanPostProcessor(BeanOverrideRegistrar registrar) {
-			this.overrideRegistrar = registrar;
+		// Since the isSingleton() check above may have registered a singleton as a side
+		// effect -- for example, for a FactoryBean -- we need to destroy the singleton,
+		// because we later manually register a bean override instance as a singleton.
+		if (beanFactory instanceof DefaultListableBeanFactory dlbf) {
+			dlbf.destroySingleton(beanName);
 		}
-
-		@Override
-		public int getOrder() {
-			return Ordered.HIGHEST_PRECEDENCE;
-		}
-
-		@Override
-		public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
-			if (bean instanceof FactoryBean) {
-				return bean;
-			}
-			this.earlyReferences.put(getCacheKey(bean, beanName), bean);
-			return this.overrideRegistrar.wrapIfNecessary(bean, beanName);
-		}
-
-		@Override
-		public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-			if (bean instanceof FactoryBean) {
-				return bean;
-			}
-			if (this.earlyReferences.remove(getCacheKey(bean, beanName)) != bean) {
-				return this.overrideRegistrar.wrapIfNecessary(bean, beanName);
-			}
-			return bean;
-		}
-
-		private String getCacheKey(Object bean, String beanName) {
-			return (StringUtils.hasLength(beanName) ? beanName : bean.getClass().getName());
-		}
-
 	}
 
 }
