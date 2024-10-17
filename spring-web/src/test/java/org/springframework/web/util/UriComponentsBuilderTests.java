@@ -47,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
  * @author Juergen Hoeller
  * @author Sam Brannen
  * @author David Eckel
+ * @author Yanming Zhou
  */
 class UriComponentsBuilderTests {
 
@@ -605,6 +606,18 @@ class UriComponentsBuilderTests {
 
 	@ParameterizedTest
 	@EnumSource(value = ParserType.class)
+	void parseBuildAndExpandHierarchical(ParserType parserType) {
+		URI uri = UriComponentsBuilder
+				.fromUriString("{scheme}://{host}:{port}/{segment}?{query}#{fragment}", parserType)
+				.buildAndExpand(Map.of(
+						"scheme", "ws", "host", "example.org", "port", "7777", "segment", "path",
+						"query", "q=1", "fragment", "foo"))
+				.toUri();
+		assertThat(uri.toString()).isEqualTo("ws://example.org:7777/path?q=1#foo");
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = ParserType.class)
 	void buildAndExpandOpaque(ParserType parserType) {
 		UriComponents result = UriComponentsBuilder.fromUriString("mailto:{user}@{domain}", parserType)
 				.buildAndExpand("foo", "example.com");
@@ -615,6 +628,22 @@ class UriComponentsBuilderTests {
 		values.put("domain", "example.com");
 		UriComponentsBuilder.fromUriString("mailto:{user}@{domain}", parserType).buildAndExpand(values);
 		assertThat(result.toUriString()).isEqualTo("mailto:foo@example.com");
+	}
+
+	@ParameterizedTest // gh-33699
+	@EnumSource(value = ParserType.class)
+	void schemeVariableMixedCase(ParserType parserType) {
+
+		BiConsumer<String, String> tester = (scheme, value) -> {
+			URI uri = UriComponentsBuilder.fromUriString(scheme + "://example.org", parserType)
+					.buildAndExpand(Map.of("TheScheme", value))
+					.toUri();
+			assertThat(uri.toString()).isEqualTo("wss://example.org");
+		};
+
+		tester.accept("{TheScheme}", "wss");
+		tester.accept("{TheScheme}s", "ws");
+		tester.accept("ws{TheScheme}", "s");
 	}
 
 	@ParameterizedTest
