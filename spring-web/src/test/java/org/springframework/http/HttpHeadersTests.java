@@ -70,6 +70,14 @@ class HttpHeadersTests {
 	}
 
 	@Test
+	void writableHttpHeadersUnwrapsMultiple() {
+		HttpHeaders originalExchangeHeaders = HttpHeaders.readOnlyHttpHeaders(new HttpHeaders());
+		HttpHeaders firewallHeaders = new HttpHeaders(originalExchangeHeaders);
+		HttpHeaders writeable = new HttpHeaders(firewallHeaders);
+		writeable.setContentType(MediaType.APPLICATION_JSON);
+	}
+
+	@Test
 	void getOrEmpty() {
 		String key = "FOO";
 
@@ -414,13 +422,12 @@ class HttpHeadersTests {
 	}
 
 	@Test
-	@SuppressWarnings("deprecation")
 	void contentDisposition() {
 		ContentDisposition disposition = headers.getContentDisposition();
 		assertThat(disposition).isNotNull();
 		assertThat(headers.getContentDisposition()).as("Invalid Content-Disposition header").isEqualTo(ContentDisposition.empty());
 
-		disposition = ContentDisposition.attachment().name("foo").filename("foo.txt").size(123L).build();
+		disposition = ContentDisposition.attachment().name("foo").filename("foo.txt").build();
 		headers.setContentDisposition(disposition);
 		assertThat(headers.getContentDisposition()).as("Invalid Content-Disposition header").isEqualTo(disposition);
 	}

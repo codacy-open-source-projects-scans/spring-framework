@@ -177,7 +177,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 	/** Map from bean name to merged BeanDefinitionHolder. */
 	private final Map<String, BeanDefinitionHolder> mergedBeanDefinitionHolders = new ConcurrentHashMap<>(256);
 
-	// Set of bean definition names with a primary marker. */
+	/** Set of bean definition names with a primary marker. */
 	private final Set<String> primaryBeanNames = ConcurrentHashMap.newKeySet(16);
 
 	/** Map of singleton and non-singleton bean names, keyed by dependency type. */
@@ -1170,6 +1170,11 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 					}
 				}
 				else {
+					if (logger.isInfoEnabled()) {
+						logger.info("Removing alias '" + beanName + "' for bean '" + aliasedName +
+								"' due to registration of bean definition for bean '" + beanName + "': [" +
+								beanDefinition + "]");
+					}
 					removeAlias(beanName);
 				}
 			}
