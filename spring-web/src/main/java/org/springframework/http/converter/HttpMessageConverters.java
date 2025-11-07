@@ -21,8 +21,10 @@ import java.util.function.Consumer;
 /**
  * Utility for building and configuring an immutable collection of {@link HttpMessageConverter}
  * instances for {@link #forClient() client} or {@link #forServer() server} usage. You can
- * ask to {@link Builder#registerDefaults() register default converters with classpath detection},
- * add custom converters and post-process configured converters.
+ * ask to {@link Builder#registerDefaults() register default converters with classpath detection}
+ * and {@link Builder#withJsonConverter(HttpMessageConverter) override specific converters} that were detected.
+ * Custom converters can be independently added in front of default ones.
+ * Finally, {@link Builder#configureMessageConverters(Consumer) default and custom converters can be configured}.
  *
  * @author Brian Clozel
  * @since 7.0
@@ -38,6 +40,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 	 * <li>{@link StringHttpMessageConverter} with the {@link java.nio.charset.StandardCharsets#ISO_8859_1} charset
 	 * <li>{@link ResourceHttpMessageConverter}, with resource streaming support disabled
 	 * <li>a Multipart converter, using all detected and custom converters for part conversion
+	 * <li>A Kotlin Serialization converter
 	 * <li>A JSON converter
 	 * <li>A Smile converter
 	 * <li>A CBOR converter
@@ -60,6 +63,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 	 *     <li>{@link StringHttpMessageConverter} with the {@link java.nio.charset.StandardCharsets#ISO_8859_1} charset
 	 *     <li>{@link ResourceHttpMessageConverter}
 	 *     <li>{@link ResourceRegionHttpMessageConverter}
+	 *     <li>A Kotlin Serialization converter
 	 *     <li>A JSON converter
 	 *     <li>A Smile converter
 	 *     <li>A CBOR converter
@@ -79,7 +83,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 
 		/**
 		 * Register default converters using classpath detection.
-		 * Manual registrations like {@link #jsonMessageConverter(HttpMessageConverter)} will
+		 * Manual registrations like {@link #withJsonConverter(HttpMessageConverter)} will
 		 * override auto-detected ones.
 		 */
 		T registerDefaults();
@@ -90,7 +94,15 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param stringMessageConverter the converter instance to use
 		 * @see StringHttpMessageConverter
 		 */
-		T stringMessageConverter(HttpMessageConverter<?> stringMessageConverter);
+		T withStringConverter(HttpMessageConverter<?> stringMessageConverter);
+
+		/**
+		 * Override the default String {@code HttpMessageConverter}
+		 * with any converter supporting the Kotlin Serialization conversion for JSON.
+		 * @param kotlinSerializationConverter the converter instance to use
+		 * @see org.springframework.http.converter.json.KotlinSerializationJsonHttpMessageConverter
+		 */
+		T withKotlinSerializationJsonConverter(HttpMessageConverter<?> kotlinSerializationConverter);
 
 		/**
 		 * Override the default Jackson 3.x JSON {@code HttpMessageConverter}
@@ -98,7 +110,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param jsonMessageConverter the converter instance to use
 		 * @see org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 		 */
-		T jsonMessageConverter(HttpMessageConverter<?> jsonMessageConverter);
+		T withJsonConverter(HttpMessageConverter<?> jsonMessageConverter);
 
 		/**
 		 * Override the default Jackson 3.x XML {@code HttpMessageConverter}
@@ -106,7 +118,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param xmlMessageConverter the converter instance to use
 		 * @see org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
 		 */
-		T xmlMessageConverter(HttpMessageConverter<?> xmlMessageConverter);
+		T withXmlConverter(HttpMessageConverter<?> xmlMessageConverter);
 
 		/**
 		 * Override the default Jackson 3.x Smile {@code HttpMessageConverter}
@@ -114,7 +126,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param smileMessageConverter the converter instance to use
 		 * @see org.springframework.http.converter.smile.JacksonSmileHttpMessageConverter
 		 */
-		T smileMessageConverter(HttpMessageConverter<?> smileMessageConverter);
+		T withSmileConverter(HttpMessageConverter<?> smileMessageConverter);
 
 		/**
 		 * Override the default Jackson 3.x CBOR {@code HttpMessageConverter}
@@ -122,7 +134,7 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param cborMessageConverter the converter instance to use
 		 * @see org.springframework.http.converter.cbor.JacksonCborHttpMessageConverter
 		 */
-		T cborMessageConverter(HttpMessageConverter<?> cborMessageConverter);
+		T withCborConverter(HttpMessageConverter<?> cborMessageConverter);
 
 		/**
 		 * Override the default Jackson 3.x Yaml {@code HttpMessageConverter}
@@ -130,13 +142,13 @@ public interface HttpMessageConverters extends Iterable<HttpMessageConverter<?>>
 		 * @param yamlMessageConverter the converter instance to use
 		 * @see org.springframework.http.converter.yaml.JacksonYamlHttpMessageConverter
 		 */
-		T yamlMessageConverter(HttpMessageConverter<?> yamlMessageConverter);
+		T withYamlConverter(HttpMessageConverter<?> yamlMessageConverter);
 
 		/**
-		 * Add a custom {@code HttpMessageConverter} to the list of converters.
+		 * Add a custom {@code HttpMessageConverter} to the list of converters, ahead of the default converters.
 		 * @param customConverter the converter instance to add
 		 */
-		T customMessageConverter(HttpMessageConverter<?> customConverter);
+		T addCustomConverter(HttpMessageConverter<?> customConverter);
 
 		/**
 		 * Add a consumer for configuring the selected message converters.
