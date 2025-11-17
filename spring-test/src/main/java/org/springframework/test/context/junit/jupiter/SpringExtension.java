@@ -153,7 +153,7 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 	 * Returns {@link ExtensionContextScope#TEST_METHOD ExtensionContextScope.TEST_METHOD}.
 	 * <p>This can be effectively overridden by annotating a test class with
 	 * {@code @SpringExtensionConfig(useTestClassScopedExtensionContext = true)}.
-	 * See the {@link SpringExtension class-level Javadoc} for further details.
+	 * See the {@linkplain SpringExtension class-level Javadoc} for further details.
 	 * @since 7.0
 	 * @see SpringExtensionConfig#useTestClassScopedExtensionContext()
 	 */
@@ -334,6 +334,10 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 	 * <li>The parameter is of type {@link ApplicationEvents} or a sub-type thereof.</li>
 	 * <li>{@link ParameterResolutionDelegate#isAutowirable} returns {@code true}.</li>
 	 * </ol>
+	 * <p>This method does not {@linkplain #getApplicationContext(ExtensionContext)
+	 * load} the {@code ApplicationContext} or verify that the application context
+	 * actually contains a matching candidate bean, since doing so would potentially
+	 * load an application context too early or unnecessarily.
 	 * <p><strong>WARNING</strong>: If a test class {@code Constructor} is annotated
 	 * with {@code @Autowired} or automatically autowirable (see
 	 * {@link org.springframework.test.context.TestConstructor @TestConstructor}),
@@ -391,7 +395,18 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 
 
 	/**
-	 * Get the {@link ApplicationContext} associated with the supplied {@code ExtensionContext}.
+	 * Get the {@link ApplicationContext} associated with the supplied {@link ExtensionContext}.
+	 * <p><strong>NOTE</strong>: As of Spring Framework 7.0, the supplied
+	 * {@code ExtensionContext} may not be properly <em>scoped</em>. See the
+	 * {@linkplain SpringExtension class-level Javadoc} for further details.
+	 * <p><strong>WARNING</strong>: Invoking this method ensures that the
+	 * corresponding {@code ApplicationContext} is
+	 * {@linkplain org.springframework.test.context.TestContext#getApplicationContext()
+	 * loaded}. Consequently, this method should not be used if eager loading of
+	 * the application context is undesired. For example,
+	 * {@link #supportsParameter(ParameterContext, ExtensionContext)} intentionally
+	 * does not invoke this method, since doing so would potentially load an
+	 * application context too early or unnecessarily.
 	 * @param context the current {@code ExtensionContext} (never {@code null})
 	 * @return the application context
 	 * @throws IllegalStateException if an error occurs while retrieving the application context
@@ -402,7 +417,7 @@ public class SpringExtension implements BeforeAllCallback, AfterAllCallback, Tes
 	}
 
 	/**
-	 * Get the {@link TestContextManager} associated with the supplied {@code ExtensionContext}.
+	 * Get the {@link TestContextManager} associated with the supplied {@link ExtensionContext}.
 	 * @return the {@code TestContextManager} (never {@code null})
 	 */
 	static TestContextManager getTestContextManager(ExtensionContext context) {
