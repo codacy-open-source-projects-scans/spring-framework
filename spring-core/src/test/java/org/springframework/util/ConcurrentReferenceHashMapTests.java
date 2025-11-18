@@ -16,8 +16,7 @@
 
 package org.springframework.util;
 
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -25,6 +24,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Spliterator;
+import java.util.stream.Collectors;
 
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -32,12 +33,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.util.ConcurrentReferenceHashMap.Entry;
 import org.springframework.util.ConcurrentReferenceHashMap.Reference;
 import org.springframework.util.ConcurrentReferenceHashMap.Restructure;
-import org.springframework.util.comparator.Comparators;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.entry;
 
 /**
  * Tests for {@link ConcurrentReferenceHashMap}.
@@ -46,8 +48,6 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
  * @author Juergen Hoeller
  */
 class ConcurrentReferenceHashMapTests {
-
-	private static final Comparator<? super String> NULL_SAFE_STRING_SORT = Comparators.nullsLow();
 
 	private TestWeakConcurrentCache<Integer, String> map = new TestWeakConcurrentCache<>();
 
@@ -450,19 +450,174 @@ class ConcurrentReferenceHashMapTests {
 		assertThat(this.map.keySet()).isEqualTo(expected);
 	}
 
+	@Test  // gh-35817
+	void keySetContains() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		assertThat(this.map.keySet()).containsExactlyInAnyOrder(123, 456, null);
+	}
+
+	@Test  // gh-35817
+	void keySetRemove() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		assertThat(this.map.keySet().remove(123)).isTrue();
+		assertThat(this.map).doesNotContainKey(123);
+		assertThat(this.map.keySet().remove(123)).isFalse();
+	}
+
+	@Test  // gh-35817
+	void keySetIterator() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Iterator<Integer> it = this.map.keySet().iterator();
+		assertThat(it).toIterable().containsExactlyInAnyOrder(123, 456, null);
+		assertThat(it).isExhausted();
+	}
+
+	@Test  // gh-35817
+	void keySetIteratorRemove() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Iterator<Integer> keySetIterator = this.map.keySet().iterator();
+		while (keySetIterator.hasNext()) {
+			Integer key = keySetIterator.next();
+			if (key != null && key.equals(456)) {
+				keySetIterator.remove();
+			}
+		}
+		assertThat(this.map).containsOnlyKeys(123, null);
+	}
+
+	@Test  // gh-35817
+	void keySetClear() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		this.map.keySet().clear();
+		assertThat(this.map).isEmpty();
+		assertThat(this.map.keySet()).isEmpty();
+	}
+
+	@Test  // gh-35817
+	void keySetAdd() {
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> this.map.keySet().add(12345));
+	}
+
+	@Test  // gh-35817
+	void keySetStream() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Set<Integer> keys = this.map.keySet().stream().collect(Collectors.toSet());
+		assertThat(keys).containsExactlyInAnyOrder(123, 456, null);
+	}
+
+	@Test  // gh-35817
+	void keySetSpliteratorCharacteristics() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Spliterator<Integer> spliterator = this.map.keySet().spliterator();
+		assertThat(spliterator).hasOnlyCharacteristics(Spliterator.CONCURRENT, Spliterator.DISTINCT);
+		assertThat(spliterator.estimateSize()).isEqualTo(3L);
+		assertThat(spliterator.getExactSizeIfKnown()).isEqualTo(-1L);
+	}
+
 	@Test
 	void valuesCollection() {
 		this.map.put(123, "123");
 		this.map.put(456, null);
 		this.map.put(null, "789");
-		List<String> actual = new ArrayList<>(this.map.values());
-		List<String> expected = new ArrayList<>();
-		expected.add("123");
-		expected.add(null);
-		expected.add("789");
-		actual.sort(NULL_SAFE_STRING_SORT);
-		expected.sort(NULL_SAFE_STRING_SORT);
-		assertThat(actual).isEqualTo(expected);
+		assertThat(this.map.values()).containsExactlyInAnyOrder("123", null, "789");
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionAdd() {
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> this.map.values().add("12345"));
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionClear() {
+		Collection<String> values = this.map.values();
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		assertThat(values).hasSize(3);
+		values.clear();
+		assertThat(values).isEmpty();
+		assertThat(this.map).isEmpty();
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionRemoval() {
+		Collection<String> values = this.map.values();
+		assertThat(values).isEmpty();
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		assertThat(values).containsExactlyInAnyOrder("123", null, "789");
+		values.remove(null);
+		assertThat(values).containsExactlyInAnyOrder("123", "789");
+		assertThat(map).containsOnly(entry(123, "123"), entry(null, "789"));
+		values.remove("123");
+		values.remove("789");
+		assertThat(values).isEmpty();
+		assertThat(map).isEmpty();
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionIterator() {
+		Iterator<String> iterator = this.map.values().iterator();
+		assertThat(iterator).isExhausted();
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		iterator = this.map.values().iterator();
+		assertThat(iterator).toIterable().containsExactlyInAnyOrder("123", null, "789");
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionIteratorRemoval() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Iterator<String> iterator = this.map.values().iterator();
+		while (iterator.hasNext()) {
+			String value = iterator.next();
+			if (value != null && value.equals("789")) {
+				iterator.remove();
+			}
+		}
+		assertThat(iterator).isExhausted();
+		assertThat(this.map.values()).containsExactlyInAnyOrder("123", null);
+		assertThat(this.map).containsOnlyKeys(123, 456);
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionStream() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		List<String> values = this.map.values().stream().toList();
+		assertThat(values).containsExactlyInAnyOrder("123", null, "789");
+	}
+
+	@Test  // gh-35817
+	void valuesCollectionSpliteratorCharacteristics() {
+		this.map.put(123, "123");
+		this.map.put(456, null);
+		this.map.put(null, "789");
+		Spliterator<String> spliterator = this.map.values().spliterator();
+		assertThat(spliterator).hasOnlyCharacteristics(Spliterator.CONCURRENT);
+		assertThat(spliterator.estimateSize()).isEqualTo(3L);
+		assertThat(spliterator.getExactSizeIfKnown()).isEqualTo(-1L);
 	}
 
 	@Test
@@ -539,6 +694,17 @@ class ConcurrentReferenceHashMapTests {
 		copy.forEach(entry -> assertThat(entrySet).contains(entry));
 		entrySet.clear();
 		copy.forEach(entry -> assertThat(entrySet).doesNotContain(entry));
+	}
+
+	@Test  // gh-35817
+	void entrySetSpliteratorCharacteristics() {
+		this.map.put(1, "1");
+		this.map.put(2, "2");
+		this.map.put(3, "3");
+		Spliterator<Map.Entry<Integer, String>> spliterator = this.map.entrySet().spliterator();
+		assertThat(spliterator).hasOnlyCharacteristics(Spliterator.CONCURRENT, Spliterator.DISTINCT);
+		assertThat(spliterator.estimateSize()).isEqualTo(3L);
+		assertThat(spliterator.getExactSizeIfKnown()).isEqualTo(-1L);
 	}
 
 	@Test
