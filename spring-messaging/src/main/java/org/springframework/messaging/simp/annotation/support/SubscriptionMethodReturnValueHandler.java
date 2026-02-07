@@ -16,6 +16,8 @@
 
 package org.springframework.messaging.simp.annotation.support;
 
+import java.util.function.Predicate;
+
 import org.apache.commons.logging.Log;
 import org.jspecify.annotations.Nullable;
 
@@ -65,6 +67,8 @@ public class SubscriptionMethodReturnValueHandler implements HandlerMethodReturn
 
 	private @Nullable MessageHeaderInitializer headerInitializer;
 
+	private @Nullable Predicate<String> headerFilter;
+
 
 	/**
 	 * Construct a new SubscriptionMethodReturnValueHandler.
@@ -91,6 +95,26 @@ public class SubscriptionMethodReturnValueHandler implements HandlerMethodReturn
 	 */
 	public @Nullable MessageHeaderInitializer getHeaderInitializer() {
 		return this.headerInitializer;
+	}
+
+	/**
+	 * Add a filter to determine which headers from the input message should be
+	 * propagated to the output message. Multiple filters are combined with
+	 * {@link Predicate#or(Predicate)}.
+	 * <p>By default, no headers are propagated if this is not set.
+	 * @since 7.0.4
+	 */
+	public void addHeaderFilter(Predicate<String> filter) {
+		Assert.notNull(filter, "Filter predicate must not be null");
+		this.headerFilter = (this.headerFilter != null ? this.headerFilter.or(filter) : filter);
+	}
+
+	/**
+	 * Return the configured header filter.
+	 * @since 7.0.4
+	 */
+	public @Nullable Predicate<String> getHeaderFilter() {
+		return this.headerFilter;
 	}
 
 
@@ -126,14 +150,21 @@ public class SubscriptionMethodReturnValueHandler implements HandlerMethodReturn
 		if (logger.isDebugEnabled()) {
 			logger.debug("Reply to @SubscribeMapping: " + returnValue);
 		}
-		MessageHeaders headersToSend = createHeaders(sessionId, subscriptionId, returnType);
+		MessageHeaders headersToSend = createHeaders(sessionId, subscriptionId, returnType, message);
 		this.messagingTemplate.convertAndSend(destination, returnValue, headersToSend);
 	}
 
-	private MessageHeaders createHeaders(@Nullable String sessionId, String subscriptionId, MethodParameter returnType) {
+	private MessageHeaders createHeaders(@Nullable String sessionId, String subscriptionId, MethodParameter returnType, @Nullable Message<?> inputMessage) {
 		SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
 		if (getHeaderInitializer() != null) {
 			getHeaderInitializer().initHeaders(accessor);
+		}
+		if (inputMessage != null && this.headerFilter != null) {
+			inputMessage.getHeaders().forEach((name, value) -> {
+				if (this.headerFilter.test(name)) {
+					accessor.setHeader(name, value);
+				}
+			});
 		}
 		if (sessionId != null) {
 			accessor.setSessionId(sessionId);
