@@ -34,6 +34,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -75,6 +77,11 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 	// initial value of zero implies that a random ephemeral port should be used
 	private int port = 0;
 
+	@RegisterExtension
+	BeforeTestExecutionCallback loggingExtension =
+			context -> logger.debug("Starting test %s()".formatted(context.getRequiredTestMethod().getName()));
+
+
 
 	@BeforeEach
 	void setup(TestInfo testInfo) throws Exception {
@@ -114,7 +121,8 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 		StubMessageChannel channel = new StubMessageChannel();
 		List<String> prefixes = Arrays.asList("/queue/", "/topic/");
 		this.relay = new StompBrokerRelayMessageHandler(channel, this.responseChannel, channel, prefixes);
-		this.relay.setRelayPort(this.port);
+		// We do not set the relayPort, since we explicitly set the TCP client.
+		// this.relay.setRelayPort(this.port);
 		this.relay.setApplicationEventPublisher(this.eventPublisher);
 		this.relay.setSystemHeartbeatReceiveInterval(0);
 		this.relay.setSystemHeartbeatSendInterval(0);
@@ -156,8 +164,6 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 
 	@Test
 	void publishSubscribe() throws Exception {
-		logger.debug("Starting test publishSubscribe()");
-
 		String sess1 = "sess1";
 		String sess2 = "sess2";
 		String subs1 = "subs1";
@@ -180,8 +186,6 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 
 	@Test
 	void messageDeliveryExceptionIfSystemSessionForwardFails() throws Exception {
-		logger.debug("Starting test messageDeliveryExceptionIfSystemSessionForwardFails()");
-
 		stopActiveMqBrokerAndAwait();
 		this.eventPublisher.expectBrokerAvailabilityEvent(false);
 
@@ -192,8 +196,6 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 
 	@Test
 	void brokerBecomingUnavailableTriggersErrorFrame() throws Exception {
-		logger.debug("Starting test brokerBecomingUnavailableTriggersErrorFrame()");
-
 		String sess1 = "sess1";
 		MessageExchange connect = MessageExchangeBuilder.connect(sess1).build();
 		this.relay.handleMessage(connect.message);
@@ -207,16 +209,12 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 
 	@Test
 	void brokerAvailabilityEventWhenStopped() throws Exception {
-		logger.debug("Starting test brokerAvailabilityEventWhenStopped()");
-
 		stopActiveMqBrokerAndAwait();
 		this.eventPublisher.expectBrokerAvailabilityEvent(false);
 	}
 
 	@Test
 	void relayReconnectsIfBrokerComesBackUp() throws Exception {
-		logger.debug("Starting test relayReconnectsIfBrokerComesBackUp()");
-
 		String sess1 = "sess1";
 		MessageExchange conn1 = MessageExchangeBuilder.connect(sess1).build();
 		this.relay.handleMessage(conn1.message);
@@ -241,8 +239,6 @@ public abstract class AbstractStompBrokerRelayIntegrationTests {
 
 	@Test
 	void disconnectWithReceipt() throws Exception {
-		logger.debug("Starting test disconnectWithReceipt()");
-
 		MessageExchange connect = MessageExchangeBuilder.connect("sess1").build();
 		this.relay.handleMessage(connect.message);
 		this.responseHandler.expectMessages(connect);

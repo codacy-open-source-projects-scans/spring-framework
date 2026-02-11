@@ -191,26 +191,28 @@ class SubscriptionMethodReturnValueHandlerTests {
 		String sessionId = "sess1";
 		String subscriptionId = "subs1";
 		String destination = "/dest";
-		String customHeaderName = "x-custom-header";
-		String customHeaderValue = "custom-value";
+		String headerName = "x-custom-header";
+		String headerValue = "custom-value";
 
-		Message<?> inputMessage = MessageBuilder.withPayload(PAYLOAD)
-				.setHeader(SimpMessageHeaderAccessor.SESSION_ID_HEADER, sessionId)
-				.setHeader(SimpMessageHeaderAccessor.SUBSCRIPTION_ID_HEADER, subscriptionId)
-				.setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, destination)
-				.setHeader(customHeaderName, customHeaderValue)
-				.build();
+		SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create();
+		accessor.setSessionId(sessionId);
+		accessor.setSubscriptionId(subscriptionId);
+		accessor.setDestination(destination);
+		accessor.setNativeHeader(headerName, headerValue);
+		Message<?> inputMessage = MessageBuilder.createMessage(PAYLOAD, accessor.getMessageHeaders());
 
 		MessageSendingOperations template = mock();
 		SubscriptionMethodReturnValueHandler handler = new SubscriptionMethodReturnValueHandler(template);
-		handler.addHeaderFilter(name -> name.equals(customHeaderName));
+		handler.addHeaderFilter(name -> name.equals(headerName));
 
 		handler.handleReturnValue(PAYLOAD, this.subscribeEventReturnType, inputMessage);
 
 		ArgumentCaptor<MessageHeaders> captor = ArgumentCaptor.forClass(MessageHeaders.class);
 		verify(template).convertAndSend(eq(destination), eq(PAYLOAD), captor.capture());
 
-		assertThat(captor.getValue().get(customHeaderName)).isEqualTo(customHeaderValue);
+		accessor = MessageHeaderAccessor.getAccessor(captor.getValue(), SimpMessageHeaderAccessor.class);
+		assertThat(accessor).isNotNull();
+		assertThat(accessor.getFirstNativeHeader(headerName)).isEqualTo(headerValue);
 	}
 
 	@Test
@@ -221,13 +223,13 @@ class SubscriptionMethodReturnValueHandlerTests {
 		String headerA = "x-header-a";
 		String headerB = "x-header-b";
 
-		Message<?> inputMessage = MessageBuilder.withPayload(PAYLOAD)
-				.setHeader(SimpMessageHeaderAccessor.SESSION_ID_HEADER, sessionId)
-				.setHeader(SimpMessageHeaderAccessor.SUBSCRIPTION_ID_HEADER, subscriptionId)
-				.setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, destination)
-				.setHeader(headerA, "A-value")
-				.setHeader(headerB, "B-value")
-				.build();
+		SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create();
+		accessor.setSessionId(sessionId);
+		accessor.setSubscriptionId(subscriptionId);
+		accessor.setDestination(destination);
+		accessor.setNativeHeader(headerA, "A-value");
+		accessor.setNativeHeader(headerB, "B-value");
+		Message<?> inputMessage = MessageBuilder.createMessage(PAYLOAD, accessor.getMessageHeaders());
 
 		MessageSendingOperations template = mock();
 		SubscriptionMethodReturnValueHandler handler = new SubscriptionMethodReturnValueHandler(template);
@@ -239,9 +241,10 @@ class SubscriptionMethodReturnValueHandlerTests {
 		ArgumentCaptor<MessageHeaders> captor = ArgumentCaptor.forClass(MessageHeaders.class);
 		verify(template).convertAndSend(eq(destination), eq(PAYLOAD), captor.capture());
 
-		MessageHeaders sentHeaders = captor.getValue();
-		assertThat(sentHeaders.get(headerA)).isEqualTo("A-value");
-		assertThat(sentHeaders.get(headerB)).isEqualTo("B-value");
+		accessor = MessageHeaderAccessor.getAccessor(captor.getValue(), SimpMessageHeaderAccessor.class);
+		assertThat(accessor).isNotNull();
+		assertThat(accessor.getFirstNativeHeader(headerA)).isEqualTo("A-value");
+		assertThat(accessor.getFirstNativeHeader(headerB)).isEqualTo("B-value");
 	}
 
 	private Message<?> createInputMessage(String sessId, String subsId, String dest, Principal principal) {
