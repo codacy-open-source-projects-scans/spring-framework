@@ -182,6 +182,37 @@ class WebHttpHandlerBuilderTests {
 				.isInstanceOf(NoUniqueBeanDefinitionException.class);
 	}
 
+	@Test
+	void defaultHtmlEscape() {
+		HttpHandler httpHandler = WebHttpHandlerBuilder
+				.webHandler(exchange -> Mono.empty())
+				.defaultHtmlEscape(true)
+				.build();
+
+		assertThat(httpHandler).isInstanceOf(HttpWebHandlerAdapter.class);
+		assertThat(((HttpWebHandlerAdapter) httpHandler).getDefaultHtmlEscape()).isTrue();
+	}
+
+	@Test
+	void defaultHtmlEscapeNotConfigured() {
+		HttpHandler httpHandler = WebHttpHandlerBuilder
+				.webHandler(exchange -> Mono.empty())
+				.build();
+
+		assertThat(httpHandler).isInstanceOf(HttpWebHandlerAdapter.class);
+		assertThat(((HttpWebHandlerAdapter) httpHandler).getDefaultHtmlEscape()).isNull();
+	}
+
+	@Test
+	void cloneWithDefaultHtmlEscape() {
+		WebHttpHandlerBuilder builder = WebHttpHandlerBuilder
+				.webHandler(exchange -> Mono.empty())
+				.defaultHtmlEscape(true);
+
+		assertThat(((HttpWebHandlerAdapter) builder.build()).getDefaultHtmlEscape()).isTrue();
+		assertThat(((HttpWebHandlerAdapter) builder.clone().build()).getDefaultHtmlEscape()).isTrue();
+	}
+
 	private static Mono<Void> writeToResponse(ServerWebExchange exchange, String value) {
 		byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
 		DataBuffer buffer = DefaultDataBufferFactory.sharedInstance.wrap(bytes);
