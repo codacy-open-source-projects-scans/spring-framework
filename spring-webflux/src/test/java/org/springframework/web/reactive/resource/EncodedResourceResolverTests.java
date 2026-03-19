@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Rossen Stoyanchev
  */
 @ExtendWith(GzipSupport.class)
-public class EncodedResourceResolverTests {
+class EncodedResourceResolverTests {
 
 	private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
@@ -136,7 +136,7 @@ public class EncodedResourceResolverTests {
 	}
 
 	@Test  // SPR-13149
-	public void resolveWithNullRequest() {
+	void resolveWithNullRequest() {
 
 		String file = "js/foo.js";
 		Resource resolved = this.resolver.resolveResource(null, file, this.locations).block(TIMEOUT);

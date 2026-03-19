@@ -49,17 +49,17 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 class MethodInvocationProceedingJoinPointTests {
 
 	@Test
-	void testingBindingWithJoinPoint() {
+	void bindingWithJoinPoint() {
 		assertThatIllegalStateException().isThrownBy(AbstractAspectJAdvice::currentJoinPoint);
 	}
 
 	@Test
-	void testingBindingWithProceedingJoinPoint() {
+	void bindingWithProceedingJoinPoint() {
 		assertThatIllegalStateException().isThrownBy(AbstractAspectJAdvice::currentJoinPoint);
 	}
 
 	@Test
-	void testCanGetMethodSignatureFromJoinPoint() {
+	void canGetMethodSignatureFromJoinPoint() {
 		final Object raw = new TestBean();
 		// Will be set by advice during a method call
 		final int newAge = 23;
@@ -118,7 +118,7 @@ class MethodInvocationProceedingJoinPointTests {
 	}
 
 	@Test
-	void testCanGetSourceLocationFromJoinPoint() {
+	void canGetSourceLocationFromJoinPoint() {
 		final Object raw = new TestBean();
 		ProxyFactory pf = new ProxyFactory(raw);
 		pf.addAdvisor(ExposeInvocationInterceptor.ADVISOR);
@@ -135,7 +135,7 @@ class MethodInvocationProceedingJoinPointTests {
 	}
 
 	@Test
-	void testCanGetStaticPartFromJoinPoint() {
+	void canGetStaticPartFromJoinPoint() {
 		final Object raw = new TestBean();
 		ProxyFactory pf = new ProxyFactory(raw);
 		pf.addAdvisor(ExposeInvocationInterceptor.ADVISOR);

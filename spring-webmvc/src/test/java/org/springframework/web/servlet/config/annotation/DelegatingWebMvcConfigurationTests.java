@@ -62,7 +62,7 @@ import static org.mockito.Mockito.verify;
  * @author Rossen Stoyanchev
  */
 @ExtendWith(MockitoExtension.class)
-public class DelegatingWebMvcConfigurationTests {
+class DelegatingWebMvcConfigurationTests {
 
 	@Mock
 	private WebMvcConfigurer webMvcConfigurer;
@@ -198,7 +198,7 @@ public class DelegatingWebMvcConfigurationTests {
 	}
 
 	@Test
-	public void addErrorResponseInterceptors() {
+	void addErrorResponseInterceptors() {
 		ErrorResponse.Interceptor interceptor = (detail, errorResponse) -> {};
 		WebMvcConfigurer configurer = new WebMvcConfigurer() {
 			@Override
@@ -227,7 +227,7 @@ public class DelegatingWebMvcConfigurationTests {
 
 	@SuppressWarnings("removal")
 	@Test
-	public void configurePathMatcher() {
+	void configurePathMatcher() {
 		PathMatcher pathMatcher = mock();
 		UrlPathHelper pathHelper = mock();
 
