@@ -14,19 +14,7 @@
  * limitations under the License.
  */
 
-package org.springframework.context.testfixture.beans.factory;
+package org.springframework.test.context.bean.override.mockito.typelevel;
 
-import org.springframework.beans.factory.BeanRegistrar;
-import org.springframework.beans.factory.BeanRegistry;
-import org.springframework.core.env.Environment;
-
-public class BarRegistrar implements BeanRegistrar {
-
-	@Override
-	public void register(BeanRegistry registry, Environment env) {
-		registry.registerBean(Bar.class);
-	}
-
-	public record Bar() {}
-
+interface ConstructorService01 extends Service {
 }

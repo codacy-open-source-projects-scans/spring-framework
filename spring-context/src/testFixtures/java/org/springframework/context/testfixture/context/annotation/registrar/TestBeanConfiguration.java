@@ -14,19 +14,18 @@
  * limitations under the License.
  */
 
-package org.springframework.context.testfixture.beans.factory;
+package org.springframework.context.testfixture.context.annotation.registrar;
 
-import org.springframework.beans.factory.BeanRegistrar;
-import org.springframework.beans.factory.BeanRegistry;
-import org.springframework.core.env.Environment;
+import org.springframework.beans.testfixture.beans.TestBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-public class BarRegistrar implements BeanRegistrar {
+@Configuration
+public class TestBeanConfiguration {
 
-	@Override
-	public void register(BeanRegistry registry, Environment env) {
-		registry.registerBean(Bar.class);
+	@Bean
+	public TestBean testBean() {
+		return new TestBean();
 	}
-
-	public record Bar() {}
 
 }
