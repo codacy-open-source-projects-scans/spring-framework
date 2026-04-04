@@ -269,8 +269,22 @@ final class TypeMappedAnnotation<A extends Annotation> extends AbstractMergedAnn
 		AttributeMethods attributes = this.mapping.getAttributes();
 		for (int i = 0; i < attributes.size(); i++) {
 			Method attribute = attributes.get(i);
-			Object value = (isFiltered(attribute.getName()) ? null :
-					getValue(i, getTypeForMapOptions(attribute, adaptations)));
+			if (isFiltered(attribute.getName())) {
+				continue;
+			}
+			Object value;
+			try {
+				value = getValue(i, getTypeForMapOptions(attribute, adaptations));
+			}
+			catch (Throwable ex) {
+				// If the value for the current annotation attribute cannot be resolved
+				// (for example, a class attribute referencing a type that is absent from
+				// the classpath), store the exception as the value and skip the "adapt"
+				// step. This allows us to track the exception internally and only throw it
+				// if the user actually requests the value via the AnnotationAttributes API.
+				map.put(attribute.getName(), ex);
+				continue;
+			}
 			if (value != null) {
 				map.put(attribute.getName(),
 						adaptValueForMapOptions(attribute, value, map.getClass(), factory, adaptations));
@@ -436,7 +450,12 @@ final class TypeMappedAnnotation<A extends Annotation> extends AbstractMergedAnn
 			value = clazz.getName();
 		}
 		else if (value instanceof String str && type == Class.class) {
-			value = ClassUtils.resolveClassName(str, getClassLoader());
+			try {
+				value = ClassUtils.forName(str, getClassLoader());
+			}
+			catch (ClassNotFoundException | LinkageError ex) {
+				throw new TypeNotPresentException(str, ex);
+			}
 		}
 		else if (value instanceof Class<?>[] classes && type == String[].class) {
 			String[] names = new String[classes.length];
@@ -447,8 +466,14 @@ final class TypeMappedAnnotation<A extends Annotation> extends AbstractMergedAnn
 		}
 		else if (value instanceof String[] names && type == Class[].class) {
 			Class<?>[] classes = new Class<?>[names.length];
+			ClassLoader classLoader = getClassLoader();
 			for (int i = 0; i < names.length; i++) {
-				classes[i] = ClassUtils.resolveClassName(names[i], getClassLoader());
+				try {
+					classes[i] = ClassUtils.forName(names[i], classLoader);
+				}
+				catch (ClassNotFoundException | LinkageError ex) {
+					throw new TypeNotPresentException(names[i], ex);
+				}
 			}
 			value = classes;
 		}
