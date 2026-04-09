@@ -226,10 +226,11 @@ final class ClassFileAnnotationMetadata implements AnnotationMetadata {
 		if (type.isPrimitive()) {
 			return type.displayName();
 		}
-		if (type.isArray()) {
-			return resolveTypeName(type.componentType()) + "[]";
+		ClassDesc effectiveType = type;
+		while (effectiveType.isArray()) {
+			effectiveType = effectiveType.componentType();
 		}
-		String packageName = type.packageName();
+		String packageName = effectiveType.packageName();
 		return (packageName.isEmpty() ? type.displayName() : packageName + "." + type.displayName());
 	}
 
@@ -254,7 +255,7 @@ final class ClassFileAnnotationMetadata implements AnnotationMetadata {
 
 		private Set<MethodMetadata> declaredMethods = new LinkedHashSet<>(4);
 
-		private MergedAnnotations mergedAnnotations = MergedAnnotations.of(Collections.emptySet());
+		private MergedAnnotations mergedAnnotations = MergedAnnotations.of(Collections.emptyList());
 
 		public Builder(ClassLoader classLoader) {
 			this.classLoader = classLoader;

@@ -21,11 +21,16 @@ import java.util.Date;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
+ * Tests for {@link SimpleMailMessage}.
+ *
  * @author Dmitriy Kopylenko
  * @author Juergen Hoeller
  * @author Rick Evans
@@ -96,6 +101,64 @@ class SimpleMailMessageTests {
 		assertThat(copy.getTo()[0]).isEqualTo("fiona@mail.org");
 		assertThat(copy.getCc()[0]).isEqualTo("he@mail.org");
 		assertThat(copy.getBcc()[0]).isEqualTo("us@mail.org");
+	}
+
+	@Test  // gh-36626
+	void setSentDateStoresACopy() {
+		SimpleMailMessage message = new SimpleMailMessage();
+		Date sentDate = new Date(1234L);
+
+		message.setSentDate(sentDate);
+		sentDate.setTime(0L);
+
+		assertThat(message.getSentDate()).isEqualTo(new Date(1234L));
+	}
+
+	@Test  // gh-36626
+	void getSentDateReturnsACopy() {
+		SimpleMailMessage message = new SimpleMailMessage();
+		Date sentDate = new Date(1234L);
+		message.setSentDate(sentDate);
+
+		Date exportedDate = message.getSentDate();
+		exportedDate.setTime(0L);
+
+		assertThat(message.getSentDate()).isEqualTo(new Date(1234L));
+	}
+
+	@Test  // gh-36626
+	void copyConstructorCopiesSentDate() {
+		Date sentDate = new Date(1234L);
+		SimpleMailMessage original = new SimpleMailMessage();
+		original.setSentDate(sentDate);
+
+		SimpleMailMessage copy = new SimpleMailMessage(original);
+		sentDate.setTime(0L);
+
+		Date copiedDate = copy.getSentDate();
+		assertThat(copiedDate).isNotNull();
+		copiedDate.setTime(1L);
+
+		assertThat(original.getSentDate()).isEqualTo(new Date(1234L));
+		assertThat(copy.getSentDate()).isEqualTo(new Date(1234L));
+	}
+
+	@Test  // gh-36626
+	void copyToCopiesSentDate() {
+		SimpleMailMessage source = new SimpleMailMessage();
+		source.setSentDate(new Date(1234L));
+
+		MailMessage target = mock();
+		source.copyTo(target);
+
+		ArgumentCaptor<Date> dateCaptor = ArgumentCaptor.forClass(Date.class);
+		verify(target).setSentDate(dateCaptor.capture());
+
+		Date copiedDate = dateCaptor.getValue();
+		assertThat(copiedDate).isNotNull();
+		copiedDate.setTime(0L);
+
+		assertThat(source.getSentDate()).isEqualTo(new Date(1234L));
 	}
 
 	/**
